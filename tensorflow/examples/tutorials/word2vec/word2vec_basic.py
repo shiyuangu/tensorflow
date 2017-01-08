@@ -27,6 +27,7 @@ import numpy as np
 from six.moves import urllib
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
+from tensorflow.contrib.tensorboard.plugins import projector 
 
 # Step 1: Download the data.
 url = 'http://mattmahoney.net/dc/'
@@ -220,6 +221,28 @@ with tf.Session(graph=graph) as session:
           log_str = "%s %s," % (log_str, close_word)
         print(log_str)
   final_embeddings = normalized_embeddings.eval()
+  
+  print("Saving embedding for visualization")
+  n_vis = 500 #sgu: only visualize 500
+  normalized_embeddings = tf.Variable(final_embeddings[:n_vis,:],name = ("vv"))#
+  session.run(normalized_embeddings.initializer)
+  config = projector.ProjectorConfig()
+  conf_embed = config.embeddings.add()
+  conf_embed.tensor_name = normalized_embeddings.name
+  output_path = '/tmp/tensorflow/mnist/logs/word2vec'
+  summary_writer = tf.summary.FileWriter(output_path, session.graph)
+  conf_embed.metadata_path = os.path.join('/tmp/tensorflow/mnist/logs/word2vec','labels.tsv')
+  projector.visualize_embeddings(summary_writer,config)
+  #from IPython import embed;embed()
+  saver = tf.train.Saver([normalized_embeddings])
+  saver.save(session, os.path.join(output_path, 'model.ckpt'))
+  metadata_file = open(os.path.join(output_path, 'labels.tsv'), 'w')
+  metadata_file.write('Name\tClass\n')
+  #from IPython import embed; embed() #sgu
+  labels = [reverse_dictionary[i] for i in xrange(n_vis)]
+  for ll in xrange(len(labels)):
+      metadata_file.write('%06d\t%s\n' % (ll, labels[ll]))
+  metadata_file.close()
 
 # Step 6: Visualize the embeddings.
 
