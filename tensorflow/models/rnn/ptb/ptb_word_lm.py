@@ -61,7 +61,11 @@ import time
 import numpy as np
 import tensorflow as tf
 
+#sgu: this hack is to use the reader.py instead of the one in conda
 from tensorflow.models.rnn.ptb import reader
+#import imp
+#reader = imp.load_source('reader','reader.py')
+
 
 flags = tf.flags
 logging = tf.logging
@@ -100,23 +104,26 @@ class PTBModel(object):
   def __init__(self, is_training, config, input_):
     self._input = input_
 
-    batch_size = input_.batch_size
-    num_steps = input_.num_steps
-    size = config.hidden_size
+    batch_size = input_.batch_size  #20
+    num_steps = input_.num_steps #20, the length of the sequence in each learning example. 
+    size = config.hidden_size #200-1500 depends on the config
     vocab_size = config.vocab_size
 
     # Slightly better results can be obtained with forget gate biases
     # initialized to 1 but the hyperparameters of the model would need to be
     # different than reported in the paper.
-    lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(size, forget_bias=0.0, state_is_tuple=True)
+    lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(size, forget_bias=0.0, state_is_tuple=True) #sgu: This line doesn't create the weights/bias insight the LSTM cell, not yet.
+
+    #sgu: Dropout is applied for medium/large configuration
     if is_training and config.keep_prob < 1:
       lstm_cell = tf.nn.rnn_cell.DropoutWrapper(
           lstm_cell, output_keep_prob=config.keep_prob)
     cell = tf.nn.rnn_cell.MultiRNNCell([lstm_cell] * config.num_layers, state_is_tuple=True)
-
+    
     self._initial_state = cell.zero_state(batch_size, data_type())
 
     with tf.device("/cpu:0"):
+      #sgu: embedding vector is shared across train, valid and test 
       embedding = tf.get_variable(
           "embedding", [vocab_size, size], dtype=data_type())
       inputs = tf.nn.embedding_lookup(embedding, input_.input_data)
@@ -136,37 +143,44 @@ class PTBModel(object):
     state = self._initial_state
     with tf.variable_scope("RNN"):
       for time_step in range(num_steps):
+        #sgu: All LSTMs share the same weights/bias varibles.There are num_steps LSTM cells(MultiRNNCell); each MultiRNN has two layers. 
+        #sgu: for valid/test, the reuse = True has been set and hence the if below has no effect.
         if time_step > 0: tf.get_variable_scope().reuse_variables()
         (cell_output, state) = cell(inputs[:, time_step, :], state)
         outputs.append(cell_output)
 
+    #sgu: cell_output: (batch_size, embedding_size) 
+    #sgu: output shape: (num_steps*batch_size, embedding_size)
     output = tf.reshape(tf.concat(1, outputs), [-1, size])
     softmax_w = tf.get_variable(
         "softmax_w", [size, vocab_size], dtype=data_type())
     softmax_b = tf.get_variable("softmax_b", [vocab_size], dtype=data_type())
+    #sgu: logit shape: (num_step*batch_size, vocab_size)
     logits = tf.matmul(output, softmax_w) + softmax_b
     loss = tf.nn.seq2seq.sequence_loss_by_example(
         [logits],
         [tf.reshape(input_.targets, [-1])],
         [tf.ones([batch_size * num_steps], dtype=data_type())])
     self._cost = cost = tf.reduce_sum(loss) / batch_size
-    self._final_state = state
+    #sgu: keep final state which is used as initial_state for next iteration(see run_epoch())
+    self._final_state = state  
 
     if not is_training:
       return
 
     self._lr = tf.Variable(0.0, trainable=False)
-    tvars = tf.trainable_variables()
+    tvars = tf.trainable_variables() 
     grads, _ = tf.clip_by_global_norm(tf.gradients(cost, tvars),
                                       config.max_grad_norm)
+
+    #sgu: When the learning rate self._lr changes, the optimizer picks up automatically  
     optimizer = tf.train.GradientDescentOptimizer(self._lr)
     self._train_op = optimizer.apply_gradients(
         zip(grads, tvars),
         global_step=tf.contrib.framework.get_or_create_global_step())
-
     self._new_lr = tf.placeholder(
         tf.float32, shape=[], name="new_learning_rate")
-    self._lr_update = tf.assign(self._lr, self._new_lr)
+    self._lr_update = tf.assign(self._lr, self._new_lr)  
 
   def assign_lr(self, session, lr_value):
     session.run(self._lr_update, feed_dict={self._new_lr: lr_value})
@@ -276,18 +290,22 @@ def run_epoch(session, model, eval_op=None, verbose=False):
 
   for step in range(model.input.epoch_size):
     feed_dict = {}
+    #sgu: use the final state of the current mini-batch as the initial state of the subsequent minibatch
+    #sgu: multiple LSTM cells can stack together. state[i] is the state of i-th cell.  
     for i, (c, h) in enumerate(model.initial_state):
       feed_dict[c] = state[i].c
       feed_dict[h] = state[i].h
 
     vals = session.run(fetches, feed_dict)
     cost = vals["cost"]
-    state = vals["final_state"]
+    state = vals["final_state"] 
 
     costs += cost
     iters += model.input.num_steps
-
     if verbose and step % (model.input.epoch_size // 10) == 10:
+      #sgu: the 1st : % of progress in current epoch;
+      #     the 2nd : perplexity
+      #     the 3rd:  words per sec  so far in the training 
       print("%.3f perplexity: %.3f speed: %.0f wps" %
             (step * 1.0 / model.input.epoch_size, np.exp(costs / iters),
              iters * model.input.batch_size / (time.time() - start_time)))
@@ -311,7 +329,7 @@ def get_config():
 def main(_):
   if not FLAGS.data_path:
     raise ValueError("Must set --data_path to PTB data directory")
-
+  #sgu: train_data: a list of int, len: number of word in ptb.train.txt
   raw_data = reader.ptb_raw_data(FLAGS.data_path)
   train_data, valid_data, test_data, _ = raw_data
 

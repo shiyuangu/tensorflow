@@ -24,7 +24,6 @@ import os
 
 import tensorflow as tf
 
-
 def _read_words(filename):
   with tf.gfile.GFile(filename, "r") as f:
     return f.read().decode("utf-8").replace("\n", "<eos>").split()
@@ -97,6 +96,8 @@ def ptb_producer(raw_data, batch_size, num_steps, name=None):
   Raises:
     tf.errors.InvalidArgumentError: if batch_size or num_steps are too high.
   """
+  #sgu: why raw_data, batch_size, num_steps needs to be put in name scope? they are plain python int or list.
+  #sgu: with tf.name_scope(name, "PTBProducer") also works. 
   with tf.name_scope(name, "PTBProducer", [raw_data, batch_size, num_steps]):
     raw_data = tf.convert_to_tensor(raw_data, name="raw_data", dtype=tf.int32)
 
