@@ -367,6 +367,7 @@ def main(_):
                          input_=test_input)
 
     sv = tf.train.Supervisor(logdir=FLAGS.save_path)
+    #sgu: CAUTION: tf.Session() hangs! We have to use managed_session instead (due to tf.range_input_producer() in reader.py
     with sv.managed_session() as session:
       for i in range(config.max_max_epoch):
         lr_decay = config.lr_decay ** max(i + 1 - config.max_epoch, 0.0)
