@@ -62,9 +62,9 @@ import numpy as np
 import tensorflow as tf
 
 #sgu: this hack is to use the reader.py instead of the one in conda
-from tensorflow.models.rnn.ptb import reader
-#import imp
-#reader = imp.load_source('reader','reader.py')
+#from tensorflow.models.rnn.ptb import reader
+import imp
+reader = imp.load_source('reader','reader.py')
 
 
 flags = tf.flags
@@ -299,6 +299,9 @@ def run_epoch(session, model, eval_op=None, verbose=False):
       feed_dict[h] = state[i].h
 
     vals = session.run(fetches, feed_dict)
+    #sgu: from IPython import embed; embed() #sgu
+    #sgu: ival_ = session.run(tf.get_default_graph().get_tensor_by_name('Train/TrainInput/i:0')) #sgu
+    #sgu: print("i = %d"%(ival_,)) #i is a consecutive sequence. 
     cost = vals["cost"]
     state = vals["final_state"] 
 
